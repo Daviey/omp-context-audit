@@ -1,0 +1,37 @@
+{
+	"name": "omp-context-audit",
+	"version": "0.1.0",
+	"description": "omp plugin: audit usage of context fillers (skills, MCP servers, rules, agents) across session transcripts and disable the idle ones to cut per-session token burn",
+	"license": "MIT",
+	"keywords": [
+		"omp",
+		"oh-my-pi",
+		"pi-coding-agent",
+		"plugin",
+		"context",
+		"audit",
+		"tokens"
+	],
+	"repository": {
+		"type": "git",
+		"url": "github:Daviey/omp-context-audit"
+	},
+	"files": [
+		"tools/",
+		"commands/",
+		"src/",
+		"README.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"test": "bun test tests/"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.1.0",
+		"arktype": "^2.2.3"
+	},
+	"omp": {
+		"name": "context-audit",
+		"description": "context_audit tool + /audit-context command: rank skills/MCP/rules/agents by per-session token cost vs actual usage from transcripts, with ready-to-apply disable actions"
+	}
+}
