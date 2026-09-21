@@ -231,9 +231,14 @@ export interface McpConfig {
 
 /** MCP server names from every config source, plus denylist entries. */
 export function collectMcpConfigs(paths: AuditPaths): McpConfig {
+	// The exact paths omp's builtin MCP provider reads: project `.omp/mcp.json`
+	// + `.omp/.mcp.json`, user `<agentDir>/mcp.json` + `<agentDir>/.mcp.json`;
+	// root `.mcp.json` kept defensively for claude-compat providers.
 	const files = [
-		path.join(paths.agentDir, "mcp.json"),
 		path.join(paths.projectDir, "mcp.json"),
+		path.join(paths.projectDir, ".mcp.json"),
+		path.join(paths.agentDir, "mcp.json"),
+		path.join(paths.agentDir, ".mcp.json"),
 		path.join(paths.cwd, ".mcp.json"),
 	];
 	for (const plugin of paths.pluginDirs) {

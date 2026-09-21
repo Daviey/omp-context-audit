@@ -5,6 +5,7 @@
  * are spawned and spoken JSON-RPC over stdin/stdout. Best-effort: failures are
  * reported inline, never fatal to the audit.
  */
+import { redact } from "./redact";
 import type { McpServerEntry } from "./types";
 
 interface RawServerConfig {
@@ -100,7 +101,7 @@ export async function probeHttp(url: string, headers: Record<string, string> = {
 			params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: CLIENT_INFO },
 		});
 		const initMessage = parseRpcMessage(init.text);
-		if (!initMessage) throw new Error(`initialize returned unparseable response (${init.text.slice(0, 120)})`);
+		if (!initMessage) throw new Error(redact(`initialize returned unparseable response (${init.text.slice(0, 120)})`));
 		// Streamable-http servers issue Mcp-Session-Id; echo it on later calls.
 		const sessionHeaders: Record<string, string> = init.sessionId ? { "mcp-session-id": init.sessionId } : {};
 		await post({ jsonrpc: "2.0", method: "notifications/initialized" }, sessionHeaders).catch(() => undefined);
@@ -109,7 +110,8 @@ export async function probeHttp(url: string, headers: Record<string, string> = {
 		const tools = Array.isArray(result?.tools) ? (result!.tools as Array<Record<string, unknown>>) : [];
 		return { ok: true, ...sizeTools(tools) };
 	} catch (err) {
-		return { tools: 0, schemaTokens: 0, ok: false, error: err instanceof Error ? err.message : String(err) };
+		const message = err instanceof Error ? err.message : String(err);
+		return { tools: 0, schemaTokens: 0, ok: false, error: redact(message) };
 	} finally {
 		clearTimeout(timer);
 	}
@@ -191,7 +193,8 @@ export async function probeStdio(
 			: [];
 		return { ok: true, ...sizeTools(tools) };
 	} catch (err) {
-		return { tools: 0, schemaTokens: 0, ok: false, error: err instanceof Error ? err.message : String(err) };
+		const message = err instanceof Error ? err.message : String(err);
+		return { tools: 0, schemaTokens: 0, ok: false, error: redact(message) };
 	} finally {
 		child.kill();
 		reader.cancel().catch(() => undefined);

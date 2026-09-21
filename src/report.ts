@@ -3,13 +3,14 @@
  *
  * Verdict thresholds (documented in README):
  * - UNUSED: never used in any scanned session inside the window
- * - RARE:   used in < 5% of scanned sessions
+ * - RARE:   used in < 1% of scanned sessions
  * - ACTIVE: everything else
  * - DISABLED: already hidden (skills) or denylisted (MCP)
  *
- * Candidates for the savings plan: listed skills rated UNUSED/RARE (action:
- * `hide_skill`), enabled MCP servers rated UNUSED (action: `disable_mcp`).
- * Rules and agents are reported with usage but their removal is manual.
+ * Candidates for the savings plan: listed skills rated UNUSED (action:
+ * `hide_skill`) and enabled MCP servers rated UNUSED (action: `disable_mcp`).
+ * RARE entries are listed for review only. Rules and agents are reported with
+ * usage but their removal is manual.
  */
 import { estTokens, type AuditOptions, type AuditResult, type Verdict } from "./types";
 
@@ -47,6 +48,7 @@ export interface ReportData {
 		listedSkills: number;
 		skillTokens: number;
 		hideCandidateTokens: number;
+		rareCandidateTokens: number;
 		mcpEnabled: number;
 		mcpUnused: number;
 		mcpProbeTokens?: number;
@@ -69,6 +71,10 @@ export function buildReportData(result: AuditResult, options: AuditOptions): Rep
 		skill => verdictFor(skill.usage, result.sessionsScanned, false) === "UNUSED",
 	);
 	const hideCandidateTokens = hideCandidates.reduce((sum, skill) => sum + estTokens(skill.lineChars), 0);
+	const rareCandidates = listed.filter(
+		skill => verdictFor(skill.usage, result.sessionsScanned, false) === "RARE",
+	);
+	const rareCandidateTokens = rareCandidates.reduce((sum, skill) => sum + estTokens(skill.lineChars), 0);
 
 	const mcpEnabled = result.mcp.filter(server => server.enabled);
 	const mcpUnused = mcpEnabled.filter(
@@ -140,6 +146,7 @@ export function buildReportData(result: AuditResult, options: AuditOptions): Rep
 			listedSkills: listed.length,
 			skillTokens,
 			hideCandidateTokens,
+			rareCandidateTokens,
 			mcpEnabled: mcpEnabled.length,
 			mcpUnused: mcpUnused.length,
 			mcpProbeTokens,
@@ -182,7 +189,8 @@ export function renderReport(result: AuditResult, options: AuditOptions): string
 	lines.push("");
 	lines.push("## Idle context cost per session (estimate)");
 	lines.push(
-		`- skills: ${h.listedSkills} listed ≈ ${fmtTokens(h.skillTokens)} tokens — ${fmtTokens(h.hideCandidateTokens)} from UNUSED`,
+		`- skills: ${h.listedSkills} listed ≈ ${fmtTokens(h.skillTokens)} tokens — ${fmtTokens(h.hideCandidateTokens)} from UNUSED` +
+			(h.rareCandidateTokens > 0 ? ` (+${fmtTokens(h.rareCandidateTokens)} in RARE — review)` : ""),
 	);
 	lines.push(
 		`- MCP: ${h.mcpEnabled} servers enabled, ${h.mcpUnused} unused in window` +
@@ -232,7 +240,7 @@ export function renderReport(result: AuditResult, options: AuditOptions): string
 	}
 	lines.push("");
 	lines.push(
-		"_Token figures are chars/4 estimates. Changes take effect on the next session (system prompt is built at session start). `hide_skill` keeps `skill://<name>` and `/skill:<name>` working; `disable_mcp` adds the server to `disabledServers` in the user mcp.json._",
+		"_Token figures are chars/4 estimates. Changes take effect on the next session (system prompt is built at session start). Any bulk hide/disable rewrites the system prompt, so the first session after re-pays full input once (prompt-cache fracture); the savings figure is the steady-state per-session win. `hide_skill` keeps `skill://<name>` and `/skill:<name>` working; `disable_mcp` adds the server to `disabledServers` in the user mcp.json._",
 	);
 
 	return lines.join("\n");

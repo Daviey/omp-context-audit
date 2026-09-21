@@ -217,8 +217,14 @@ export async function scanSessions(
 	const allFiles = [...new Bun.Glob("**/*.jsonl").scanSync({ cwd: sessionsRoot, onlyFiles: true })].map(
 		rel => path.join(sessionsRoot, rel),
 	);
+	// Exact-directory match with a path-separator boundary: a plain startsWith
+	// would swallow sibling projects (`-dev` matching `-dev-dvdi`).
 	const scoped = options.projectSlug
-		? allFiles.filter(file => path.dirname(file).startsWith(path.join(sessionsRoot, options.projectSlug!)))
+		? allFiles.filter(file => {
+				const dir = path.dirname(file);
+				const root = path.join(sessionsRoot, options.projectSlug!);
+				return dir === root || dir.startsWith(root + path.sep);
+			})
 		: allFiles;
 
 	const mtimeByFile = new Map<string, string>();

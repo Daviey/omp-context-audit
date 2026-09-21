@@ -16,6 +16,7 @@ import { runAudit } from "../src/audit";
 import { applyActions, type ActionResult } from "../src/apply";
 import { resolveAuditPaths } from "../src/paths";
 import { renderReport } from "../src/report";
+import { redact } from "../src/redact";
 import type { AuditAction, AuditOptions } from "../src/types";
 import type { CustomToolAPI, CustomToolFactory } from "../src/omp-types";
 
@@ -67,7 +68,7 @@ const factory: CustomToolFactory = (pi: CustomToolAPI) => {
 				actionLines.push("", "_Effective next session (the system prompt is built at session start)._");
 			}
 
-			const report = renderReport(result, options) + actionLines.join("\n");
+			const report = redact(renderReport(result, options) + actionLines.join("\n"));
 			return { content: [{ type: "text" as const, text: report }] };
 		},
 	};

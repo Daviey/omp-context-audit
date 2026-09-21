@@ -45,14 +45,16 @@ Window: 30d · 1803 sessions scanned (2250 on disk) · coverage 2026-08-22→202
 
 ### How usage is mined
 
-Session transcripts (`~/.omp/agent/sessions/**/*.jsonl`) are scanned for tool-call events inside the lookback window:
+Session transcripts (`~/.omp/agent/sessions/**/*.jsonl`, or `<agentDir>/sessions` for profile users) are scanned for tool-call events inside the lookback window:
 
 - `read` calls on `skill://<name>` → skill usage
 - `read` calls on `rule://<name>` → rule usage
-- tool calls named `mcp__<server>_<tool>` (longest-prefix matched against configured server names, dashes normalized) → MCP server usage
-- `read`/`write` calls on `xd://mcp__<server>_<tool>` device-dispatch paths → MCP server usage
+- tool calls named `mcp__<server>_<tool>` → MCP server usage
+- `read`/`write` calls on `xd://mcp__<server>_<tool>` device-dispatch paths → MCP server usage (the only pattern after omp's device-route migration; without it every server looks frozen at the migration date)
 - `mcp://<server>/...` resource reads → MCP server usage
 - `task` calls carrying `tasks[].agent` → agent usage
+
+Server attribution resolves the longest matching prefix against the configured server-name list (dashes normalized to underscores — server names themselves may contain underscores), so `mcp__arxiv_mcp_server_get_abstract` attributes to `arxiv-mcp-server`, not `arxiv`. Unattributable names land in an "unattributed" section instead of a wrong server.
 
 Timestamps come from the entry's own `timestamp` field with the session file's mtime as fallback. Subagent and advisor transcripts under the sessions root count as usage too — anything that consumed the filler counts.
 
@@ -62,8 +64,10 @@ Chars/4 (documented estimate, not a tokenizer):
 
 - skills: the exact rendered system-prompt line `- name: description`
 - rules: full body when `alwaysApply`, else the one-line summary
-- MCP servers: sum of `JSON({name, description, inputSchema})` per tool — measured by connecting (`probe: true`), HTTP handshake included (`Mcp-Session-Id` honored)
+- MCP servers: sum of `JSON({name, description, inputSchema})` per tool — measured by connecting (`probe: true`), HTTP handshake included (`Mcp-Session-Id` honored); stdio servers are spawned
 - agents: definition size, but **per spawn** — agents cost nothing idle, so they are reported for pruning guidance only
+
+MCP configs are read from the same four paths omp's builtin provider reads (project `.omp/mcp.json` + `.omp/.mcp.json`, user `<agentDir>/mcp.json` + `<agentDir>/.mcp.json`, plus root `.mcp.json` defensively) and plugin `.mcp.json` files. The agent dir honors `PI_CODING_AGENT_DIR` and `OMP_PROFILE`/`PI_PROFILE`.
 
 ### Verdicts
 
@@ -76,6 +80,10 @@ Chars/4 (documented estimate, not a tokenizer):
 
 Only `UNUSED` items enter the actionable savings plan; `RARE` items are listed for human review — occasionally-used ≠ waste.
 
+### Reading the savings number honestly
+
+The savings figure is the **steady-state** per-session win. Any bulk hide/disable rewrites the system prompt, so the first session afterwards re-pays full input once (prompt-cache fracture). Skills-block reorderings have the same effect even without disabling anything.
+
 ## Parameters
 
 | Param | Default | Meaning |
@@ -83,7 +91,7 @@ Only `UNUSED` items enter the actionable savings plan; `RARE` items are listed f
 | `days` | 30 | transcript lookback window |
 | `top` | 25 | max rows per table |
 | `probe` | false | connect to enabled MCP servers to measure schema cost (adds ~30–60s; spawns stdio servers) |
-| `scope` | `all` | `project` restricts the scan to the current project's sessions |
+| `scope` | `all` | `project` restricts the scan to the current project's sessions (exact slug dir + nested subdirs; sibling projects with prefixing slugs are excluded) |
 | `actions` | — | array of actions to apply (report-only when omitted) |
 
 ## Actions
@@ -98,9 +106,13 @@ Only `UNUSED` items enter the actionable savings plan; `RARE` items are listed f
 | Action | Effect | Reversible by |
 |---|---|---|
 | `hide_skill` | sets `hide: true` in the SKILL.md frontmatter — the skill drops out of the system-prompt listing but stays reachable via `skill://<name>` and `/skill:<name>` | `unhide_skill` |
-| `disable_mcp` | adds the server to `disabledServers` in `~/.omp/agent/mcp.json` (highest-precedence denylist) | `enable_mcp` |
+| `disable_mcp` | adds the server to `disabledServers` in the user mcp.json (highest-precedence denylist) | `enable_mcp` |
 
-Every mutation backs up the original under `~/.omp/agent/cache/context-audit-backups/<runId>/`. Actions carry `write` approval tier — omp's approval gate prompts before anything lands. Changes take effect on the **next** session (the system prompt is built at session start).
+Every mutation backs up the original under `~/.omp/agent/cache/context-audit-backups/<runId>/`. Runs carrying `actions` are write-approval-tier — omp's approval gate prompts before config edits land; report-only runs are read-tier. Changes take effect on the **next** session (the system prompt is built at session start).
+
+## Secret safety
+
+The audit reads credential-bearing mcp.json files but never emits their contents: every string in the report and in action results passes through a redaction barrier (Authorization/bearer values, key-laden URL query params, URL userinfo, provider-style API keys). Test fixtures use placeholder credentials only.
 
 ## Notes
 
@@ -112,5 +124,5 @@ Every mutation backs up the original under `~/.omp/agent/cache/context-audit-bac
 
 ```sh
 bun install
-bun test    # contract tests for miner, inventory, apply, report
+bun test    # contract tests: miner (incl. xd:// route, sibling-slug scoping), inventory, apply round-trips, redaction, report
 ```

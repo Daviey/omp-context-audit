@@ -6,17 +6,40 @@ import { applyActions, setSkillHidden as setSkillHiddenFixture } from "../src/ap
 import { collectMcpConfigs, collectSkills, parseFrontmatter } from "../src/inventory";
 import { resolveAuditPaths } from "../src/paths";
 import { renderReport, verdictFor } from "../src/report";
-import type { AuditOptions, AuditResult } from "../src/types";
+import { redact } from "../src/redact";
 import { attributeMcpTool, scanSessions, serverPrefixTable, skillNameFromUri, toUsageStat } from "../src/usage";
 
 let tmp: string;
 
 beforeAll(() => {
+
 	tmp = mkdtempSync(path.join(os.tmpdir(), "ctx-audit-"));
 });
 
 afterAll(() => {
 	rmSync(tmp, { recursive: true, force: true });
+});
+
+describe("secret redaction", () => {
+	test("strips bearer tokens, key-laden URLs, userinfo, and provider keys", () => {
+		const leaked = [
+			"fetch failed for https://api.example.test/mcp?token=abc123SECRETxyz",
+			"openai key sk-PROVIDERKEYabcd1234 dead",
+			"https://user:hunter2@example.test/feed",
+			"Authorization: Bearer 0000000000000000000000000000abcd.0AbCdEfGhIjKlMnO",
+			"expired key 7c9f01d4e2a63b8f5c9014de77a2b6e0",
+		].join(" | ");
+		const out = redact(leaked);
+		expect(out).not.toContain("abc123SECRETxyz");
+		expect(out).not.toContain("0000000000000000000000000000abcd");
+		expect(out).not.toContain("hunter2");
+		expect(out).not.toContain("sk-PROVIDERKEYabcd");
+		expect(out).toContain("<redacted>"); // from sk- rule
+		expect(out).toContain("token=<redacted>");
+		expect(out).toContain("Bearer <redacted>");
+		// bare <32hex> prose is deliberately untouched (backup paths carry hashes)
+		expect(out).toContain("expired key 7c9f01d4e2a63b8f5c9014de77a2b6e0");
+	});
 });
 
 describe("skill name extraction", () => {
@@ -101,6 +124,24 @@ describe("transcript mining", () => {
 		expect(result.acc.unknownMcpTools.get("mcp__ghost2_tool")).toBe(1);
 		expect(result.parseErrors).toBe(1);
 		expect(result.sessionsScanned).toBe(2);
+	});
+
+	test("project scope excludes sibling projects with a prefixing slug", async () => {
+		const root = path.join(tmp, "sibling-sessions");
+		mkdirSync(path.join(root, "-dev"), { recursive: true });
+		mkdirSync(path.join(root, "-dev-dvdi"), { recursive: true });
+		mkdirSync(path.join(root, "-dev", "nested"), { recursive: true });
+		const line = JSON.stringify({
+			type: "message",
+			message: { role: "assistant", content: [{ type: "toolCall", name: "read", arguments: { path: "skill://x" } }] },
+		});
+		writeFileSync(path.join(root, "-dev", "s.jsonl"), line + "\n");
+		writeFileSync(path.join(root, "-dev", "nested", "s.jsonl"), line + "\n");
+		writeFileSync(path.join(root, "-dev-dvdi", "s.jsonl"), line + "\n");
+		const result = await scanSessions(root, tmp, "/home/me/dev", [], { days: 30, projectSlug: "-dev" });
+		// Own dir + nested subdir count; the `-dev-dvdi` sibling must not leak in.
+		expect(result.sessionsTotal).toBe(2);
+		expect(toUsageStat(result.acc.skills.get("x")).sessions).toBe(2);
 	});
 
 	test("project scope only scans the project slug dir", async () => {

@@ -36,7 +36,10 @@ export interface PathOverrides {
 export function resolveAuditPaths(cwd: string, overrides: PathOverrides = {}): AuditPaths {
 	const home = process.env.HOME ?? `/home/${process.env.USER ?? "nobody"}`;
 	const agentDir =
-		overrides.agentDir ?? process.env.PI_CODING_AGENT_DIR ?? path.join(home, ".omp", "agent");
+		overrides.agentDir ??
+		process.env.PI_CODING_AGENT_DIR ??
+		profileAgentDir(home) ??
+		path.join(home, ".omp", "agent");
 	const sessionsRoot = overrides.sessionsRoot ?? path.join(agentDir, "sessions");
 
 	// Walk up from cwd to / collecting `.omp` dirs (nearest first). Existence is
@@ -58,6 +61,13 @@ export function resolveAuditPaths(cwd: string, overrides: PathOverrides = {}): A
 		pluginDirs: overrides.pluginDirs ?? enabledPluginDirs(home, overrides.pluginLockfile),
 		cwd: path.resolve(cwd),
 	};
+}
+
+/** `OMP_PROFILE`/`PI_PROFILE` select `~/.omp/profiles/<name>/agent` (dirs.ts). */
+function profileAgentDir(home: string): string | undefined {
+	const profile = process.env.OMP_PROFILE ?? process.env.PI_PROFILE;
+	if (!profile || profile === "default") return undefined;
+	return path.join(home, ".omp", "profiles", profile, "agent");
 }
 
 /**
